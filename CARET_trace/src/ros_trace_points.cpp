@@ -50,6 +50,13 @@
 
 std::unique_ptr<std::thread> trace_node_thread;
 
+struct CallbackStartStorage
+{
+  int64_t timestamp;
+  bool is_intra_process;
+};
+static thread_local CallbackStartStorage callback_start_storage;
+
 void run_caret_trace_node()
 {
   // When the python implementation node is executed,
@@ -417,39 +424,36 @@ void ros_trace_rclcpp_timer_link_node(const void * timer_handle, const void * no
 
 void ros_trace_callback_start(const void * callback, bool is_intra_process)
 {
-  static auto & context = Singleton<Context>::get_instance();
-  static auto & controller = context.get_controller();
+  (void)callback;
 
-  static void * orig_func = dlsym(RTLD_NEXT, __func__);
-  using functionT = void (*)(const void *, bool);
-
-  if (controller.is_allowed_callback(callback) &&
-    context.is_recording_allowed())
-  {
-    ((functionT) orig_func)(callback, is_intra_process);
-#ifdef DEBUG_OUTPUT
-    std::cerr << "callback_start," <<
-      callback << "," <<
-      is_intra_process << std::endl;
-#endif
+  timespec now;
+  int ret = clock_gettime(CLOCK_REALTIME, &now);
+  if (ret != 0) {
+    static auto logger = rclcpp::get_logger("caret_ros_trace_points");
+    static auto clock = rclcpp::Clock();
+    RCLCPP_ERROR_THROTTLE(logger, clock, 10000, "clock_gettime() error. errno=%d", errno);
+    now.tv_sec = {};
   }
+
+  // Save data to thread local storage to merge with callback_end
+  callback_start_storage.timestamp = ((int64_t)now.tv_sec) * 1000000000 + now.tv_nsec;
+  callback_start_storage.is_intra_process = is_intra_process;
 }
 
 void ros_trace_callback_end(const void * callback)
 {
   static auto & context = Singleton<Context>::get_instance();
   static auto & controller = context.get_controller();
-  static void * orig_func = dlsym(RTLD_NEXT, __func__);
-
-  using functionT = void (*)(const void *);
   if (controller.is_allowed_callback(callback) &&
     context.is_recording_allowed())
   {
-    ((functionT) orig_func)(callback);
-
+    tracepoint(TRACEPOINT_PROVIDER, merged_callback_timing,
+      callback_start_storage.timestamp, callback, callback_start_storage.is_intra_process ? 1 : 0);
 #ifdef DEBUG_OUTPUT
-    std::cerr << "callback_end," <<
-      callback << std::endl;
+    std::cerr << "merged_callback_timing," <<
+      callback_start_storage.timestamp << "," <<
+      callback << "," <<
+      callback_start_storage.is_intra_process << std::endl;
 #endif
   }
 }

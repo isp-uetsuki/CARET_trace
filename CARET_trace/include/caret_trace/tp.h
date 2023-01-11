@@ -475,6 +475,21 @@ TRACEPOINT_EVENT(
   )
 )
 
+TRACEPOINT_EVENT(
+  TRACEPOINT_PROVIDER,
+  merged_callback_timing,
+  TP_ARGS(
+    int64_t, start_timestamp_arg,
+    const void *, callback_arg,
+    int, is_intra_process_arg
+  ),
+  TP_FIELDS(
+    ctf_integer(const int64_t, start_timestamp, start_timestamp_arg)
+    ctf_integer_hex(const void *, callback, callback_arg)
+    ctf_integer(int, is_intra_process, is_intra_process_arg)
+  )
+)
+
 // clang-format on
 
 #endif /* _TP_H */
