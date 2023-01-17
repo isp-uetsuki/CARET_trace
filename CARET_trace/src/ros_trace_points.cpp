@@ -426,17 +426,11 @@ void ros_trace_callback_start(const void * callback, bool is_intra_process)
 {
   (void)callback;
 
-  timespec now;
-  int ret = clock_gettime(CLOCK_REALTIME, &now);
-  if (ret != 0) {
-    static auto logger = rclcpp::get_logger("caret_ros_trace_points");
-    static auto clock = rclcpp::Clock();
-    RCLCPP_ERROR_THROTTLE(logger, clock, 10000, "clock_gettime() error. errno=%d", errno);
-    now.tv_sec = {};
-  }
+  static auto & context = Singleton<Context>::get_instance();
+  static auto & clock = context.get_clock();
 
   // Save data to thread local storage to merge with callback_end
-  callback_start_storage.timestamp = ((int64_t)now.tv_sec) * 1000000000 + now.tv_nsec;
+  callback_start_storage.timestamp = clock.now();
   callback_start_storage.is_intra_process = is_intra_process;
 }
 
